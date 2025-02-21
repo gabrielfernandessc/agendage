@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agenda de Jogos - GE.globo</title>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --secondary: #3498db;
+            --background: #ecf0f1;
+            --text: #2c3e50;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: var(--background);
+            color: var(--text);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+            padding: 1rem;
+            background: var(--primary);
+            color: white;
+            border-radius: 10px;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        input[type="date"] {
+            padding: 0.8rem;
+            border: 2px solid var(--secondary);
+            border-radius: 8px;
+            font-size: 1rem;
+            width: 100%;
+        }
+
+        button {
+            padding: 0.8rem 2rem;
+            background: var(--secondary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        .jogos-container {
+            display: grid;
+            gap: 1.5rem;
+        }
+
+        .campeonato {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .campeonato-header {
+            padding: 1rem;
+            background: var(--primary);
+            color: white;
+            font-weight: bold;
+        }
+
+        .jogo {
+            padding: 1rem;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0.5rem;
+            border-bottom: 1px solid #eee;
+        }
+
+        .jogo:last-child {
+            border-bottom: none;
+        }
+
+        .jogo-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .jogo-formatado {
+            font-weight: bold;
+        }
+
+        .loading {
+            padding: 2rem;
+            text-align: center;
+            color: #7f8c8d;
+        }
+
+        .error {
+            padding: 1.5rem;
+            background: #ffeef0;
+            color: #ff4444;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .progress-container {
+            width: 100%;
+            background-color: #ddd;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-top: 1rem;
+            display: none;
+            position: relative;
+        }
+
+        .progress-bar {
+            width: 0%;
+            height: 20px;
+            background-color: var(--secondary);
+            transition: width 0.1s linear;
+            position: relative;
+        }
+
+        .progress-text {
+            position: absolute;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-size: 12px;
+            line-height: 20px;
+        }
+
+        .iframe-section {
+            margin-top: 2rem;
+            background: white;
+            padding: 1rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .iframe-section h2 {
+            margin: 0 0 1rem;
+            color: var(--primary);
+        }
+
+        iframe {
+            width: 100%;
+            height: 400px;
+            border: none;
+            border-radius: 5px;
+        }
+
+        .iframe-controls {
+            margin-top: 1rem;
+            text-align: center;
+        }
+
+        .copy-button-container {
+            text-align: center;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⚽ Agenda de Jogos - GE.globo</h1>
+    </div>
+
+    <div class="controls">
+        <input type="date" id="dataInput" onchange="atualizarIframe()">
+        <button onclick="carregarJogos()">Buscar Jogos</button>
+    </div>
+
+    <div id="resultado"></div>
+    <div class="progress-container" id="progressContainer">
+        <div class="progress-bar" id="progressBar"></div>
+        <div class="progress-text" id="progressText">0%</div>
+    </div>
+    <div class="copy-button-container">
+        <button id="copyButton" onclick="copiarTexto()" style="display: none;">Copiar Texto</button>
+    </div>
+
+    <div class="iframe-section">
+        <h2>Agenda GE.globo</h2>
+        <iframe id="geAgendaIframe" src="https://ge.globo.com/agenda/#/futebol/"></iframe>
+        <div class="iframe-controls">
+            <button onclick="gerarPDF()">Gerar PDF</button>
+        </div>
+        <div class="progress-container" id="pdfProgressContainer">
+            <div class="progress-bar" id="pdfProgressBar"></div>
+            <div class="progress-text" id="pdfProgressText">0%</div>
+        </div>
+    </div>
+
+    <script>
+        function atualizarIframe() {
+            const data = document.getElementById('dataInput').value;
+            const iframe = document.getElementById('geAgendaIframe');
+            
+            if (data) {
+                const [ano, mes, dia] = data.split('-');
+                const dataFormatada = `${dia}-${mes}-${ano}`;
+                iframe.src = `https://ge.globo.com/agenda/#/futebol/${dataFormatada}`;
+            } else {
+                iframe.src = 'https://ge.globo.com/agenda/#/futebol/';
+            }
+        }
+
+        async function carregarJogos() {
+            const data = document.getElementById('dataInput').value;
+            const resultado = document.getElementById('resultado');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            const copyButton = document.getElementById('copyButton');
+            
+            if (!data) {
+                mostrarErro('Selecione uma data válida');
+                return;
+            }
+
+            const [ano, mes, dia] = data.split('-');
+            const dataFormatada = `${dia}-${mes}-${ano}`;
+
+            resultado.innerHTML = '<div class="loading">Carregando jogos...</div>';
+            progressContainer.style.display = 'block';
+            progressBar.style.width = '0%';
+            progressText.textContent = '0%';
+            copyButton.style.display = 'none';
+
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                if (progress < 90) {
+                    progress += 10;
+                    progressBar.style.width = `${progress}%`;
+                    progressText.textContent = `${progress}%`;
+                }
+            }, 200);
+
+            try {
+                const resposta = await fetch(`http://localhost:5000/get-jogos/${dataFormatada}`);
+                
+                clearInterval(progressInterval);
+                progressBar.style.width = '100%';
+                progressText.textContent = '100%';
+                setTimeout(() => {
+                    progressContainer.style.display = 'none';
+                }, 300);
+
+                if (!resposta.ok) {
+                    const erro = await resposta.json();
+                    throw new Error(erro.error || 'Erro na requisição');
+                }
+
+                const jogos = await resposta.json();
+
+                if (jogos.error) throw new Error(jogos.error);
+                if (jogos.length === 0) {
+                    mostrarErro('Nenhum jogo encontrado para esta data');
+                    return;
+                }
+
+                exibirJogos(jogos);
+                copyButton.style.display = 'block';
+                
+            } catch (erro) {
+                clearInterval(progressInterval);
+                progressBar.style.width = '100%';
+                progressText.textContent = '100%';
+                setTimeout(() => {
+                    progressContainer.style.display = 'none';
+                }, 300);
+                mostrarErro(erro.message);
+            }
+        }
+
+        function exibirJogos(jogos) {
+            const agrupados = jogos.reduce((acc, jogo) => {
+                acc[jogo.campeonato] = acc[jogo.campeonato] || [];
+                acc[jogo.campeonato].push(jogo);
+                return acc;
+            }, {});
+
+            let html = '<div class="jogos-container">';
+
+            for (const [campeonato, jogos] of Object.entries(agrupados)) {
+                html += `
+                    <div class="campeonato">
+                        <div class="campeonato-header">${campeonato}</div>
+                `;
+
+                jogos.forEach(jogo => {
+                    html += `
+                        <div class="jogo">
+                            <div class="jogo-info">
+                                <span class="jogo-formatado">${jogo.jogo_formatado}</span>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += '</div>';
+            }
+
+            html += '</div>';
+            document.getElementById('resultado').innerHTML = html;
+        }
+
+        function mostrarErro(mensagem) {
+            document.getElementById('resultado').innerHTML = `
+                <div class="error">
+                    ⚠️ ${mensagem}
+                </div>
+            `;
+            document.getElementById('copyButton').style.display = 'none';
+        }
+
+        function copiarTexto() {
+            const resultado = document.getElementById('resultado');
+            const texto = Array.from(resultado.querySelectorAll('.campeonato'))
+                .map(campeonato => {
+                    const nome = campeonato.querySelector('.campeonato-header').textContent;
+                    const jogos = Array.from(campeonato.querySelectorAll('.jogo-formatado'))
+                        .map(jogo => jogo.textContent)
+                        .join('\n');
+                    return `${nome}\n${jogos}`;
+                })
+                .join('\n\n');
+
+            navigator.clipboard.writeText(texto)
+                .then(() => {
+                    alert('Texto copiado para a área de transferência!');
+                })
+                .catch(err => {
+                    alert('Erro ao copiar texto: ' + err);
+                });
+        }
+
+        async function gerarPDF() {
+            const data = document.getElementById('dataInput').value;
+            const resultado = document.getElementById('resultado');
+            const pdfProgressContainer = document.getElementById('pdfProgressContainer');
+            const pdfProgressBar = document.getElementById('pdfProgressBar');
+            const pdfProgressText = document.getElementById('pdfProgressText');
+            
+            if (!data) {
+                mostrarErro('Selecione uma data antes de gerar o PDF!');
+                return;
+            }
+
+            if (!resultado.querySelector('.jogos-container')) {
+                mostrarErro('Carregue os jogos antes de gerar o PDF!');
+                return;
+            }
+
+            const [ano, mes, dia] = data.split('-');
+            const dataFormatada = `${dia}-${mes}-${ano}`;
+
+            // Criar uma representação dos jogos para o PDF
+            const jogos = Array.from(resultado.querySelectorAll('.campeonato'))
+                .map(campeonato => {
+                    const nome = campeonato.querySelector('.campeonato-header').textContent;
+                    const jogos = Array.from(campeonato.querySelectorAll('.jogo-formatado'))
+                        .map(jogo => jogo.textContent);
+                    return { campeonato: nome, jogos: jogos };
+                });
+
+            pdfProgressContainer.style.display = 'block';
+            pdfProgressBar.style.width = '0%';
+            pdfProgressText.textContent = '0%';
+
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                if (progress < 90) {
+                    progress += 10;
+                    pdfProgressBar.style.width = `${progress}%`;
+                    pdfProgressText.textContent = `${progress}%`;
+                }
+            }, 200);
+
+            try {
+                const response = await fetch(`http://localhost:5000/gerar-pdf/${dataFormatada}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ jogos: jogos })
+                });
+
+                clearInterval(progressInterval);
+                pdfProgressBar.style.width = '100%';
+                pdfProgressText.textContent = '100%';
+                setTimeout(() => {
+                    pdfProgressContainer.style.display = 'none';
+                }, 300);
+
+                if (!response.ok) {
+                    const erro = await response.json();
+                    throw new Error(erro.error || 'Erro ao gerar o PDF');
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `agenda_ge_${dataFormatada}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            } catch (error) {
+                clearInterval(progressInterval);
+                pdfProgressBar.style.width = '100%';
+                pdfProgressText.textContent = '100%';
+                setTimeout(() => {
+                    pdfProgressContainer.style.display = 'none';
+                }, 300);
+                mostrarErro(`Erro ao gerar PDF: ${error.message}`);
+            }
+        }
+    </script>
+</body>
+</html>
