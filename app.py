@@ -1,67 +1,157 @@
-from flask import Flask, request, send_file, render_template_string
-import pdfkit
-import os
+from flask import Flask, jsonify, send_file, request
+from flask_cors import CORS
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+from bs4 import BeautifulSoup
+import time
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+import io
 
 app = Flask(__name__)
+CORS(app)
 
-# Carregar o index.html como string
-with open("index.html", "r", encoding="utf-8") as f:
-    INDEX_HTML = f.read()
+def get_ge_data(date):
+    """Obtém o HTML da página do GE para a data especificada."""
+    try:
+        print(f"Fetching HTML for date: {date}")
+        options = webdriver.ChromeOptions()
+        options.add_argument('--headless')
+        options.add_argument('--disable-gpu')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        url = f'https://ge.globo.com/agenda/#/futebol/{date}'
+        driver.get(url)
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'eventGrouperstyle__GroupByChampionshipsWrapper-sc-1bz1qr-0')))
+        time.sleep(5)
+        html = driver.page_source
+        print("HTML fetched successfully")
+        driver.quit()
+        return html
+    except Exception as e:
+        print(f"Error fetching HTML: {str(e)}")
+        raise Exception(f'Erro ao acessar GE.globo: {str(e)}')
 
-@app.route('/')
-def home():
-    return render_template_string(INDEX_HTML)
+def parse_games(html, date):
+    """Parseia o HTML e retorna uma lista de jogos de futebol formatados."""
+    dia, mes, ano = date.split('-')
+    data_formatada = f'{dia}/{mes}/{ano}'
 
-@app.route('/get-jogos/<data>', methods=['GET'])
-def get_jogos(data):
-    # Mock de jogos para teste (substitua por lógica real se desejar)
-    jogos = [
-        {"campeonato": "Brasileirão", "jogo_formatado": f"Flamengo x Corinthians - {data} 16:00"},
-        {"campeonato": "Brasileirão", "jogo_formatado": f"Palmeiras x São Paulo - {data} 19:00"},
-        {"campeonato": "Copa do Brasil", "jogo_formatado": f"Grêmio x Internacional - {data} 21:00"}
-    ]
-    return jogos
+    soup = BeautifulSoup(html, 'html.parser')
+    games = []
 
-@app.route('/gerar-pdf/<data>', methods=['POST'])
-def gerar_pdf(data):
-    data_json = request.json
-    jogos = data_json.get('jogos', [])
+    championship_groups = soup.find_all('div', class_='eventGrouperstyle__GroupByChampionshipsWrapper-sc-1bz1qr-0')
+    print(f"Found {len(championship_groups)} championship groups")
 
-    if not jogos:
-        return {"error": "Nenhum jogo fornecido"}, 400
+    for group in championship_groups:
+        champ_name = group.find('span', class_='eventGrouperstyle__ChampionshipName-sc-1bz1qr-2')
+        if not champ_name:
+            continue
+        championship = champ_name.text.strip()
+        print(f"Processing championship: {championship}")
 
-    # Gerar HTML para o PDF
-    html_content = f"""
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <style>
-            body {{ font-family: Arial, sans-serif; }}
-            h1 {{ color: #2c3e50; text-align: center; }}
-            h2 {{ color: #3498db; }}
-            p {{ margin: 5px 0; }}
-        </style>
-    </head>
-    <body>
-        <h1>Agenda de Jogos - {data}</h1>
-    """
-    for campeonato in jogos:
-        html_content += f"<h2>{campeonato['campeonato']}</h2>"
-        for jogo in campeonato['jogos']:
-            html_content += f"<p>{jogo}</p>"
-    html_content += "</body></html>"
+        game_cards = group.find_all('a', class_='sc-eldPxv')
+        print(f"Found {len(game_cards)} games in {championship}")
 
-    options = {
-        'page-size': 'A4',
-        'encoding': "UTF-8",
-        'enable-local-file-access': None
-    }
+        for card in game_cards:
+            try:
+                spans = card.find_all('span', class_='sc-jXbUNg')
+                if len(spans) < 2:
+                    continue
+                time = None
+                for span in spans[::-1]:
+                    text = span.text.strip()
+                    if any(char.isdigit() for char in text) and ':' in text:
+                        time = text
+                        break
+                if not time:
+                    continue
 
-    pdf_file = "output.pdf"
-    pdfkit.from_string(html_content, pdf_file, options=options)
+                teams = card.find_all('span', class_='sc-eeDRCY')
+                if len(teams) < 2:
+                    continue
+                home = teams[0].text.strip()
+                away = teams[1].text.strip()
 
-    return send_file(pdf_file, as_attachment=True, download_name=f"agenda_ge_{data}.pdf")
+                jogo_formatado = f'{data_formatada} - {time} - {home} x {away}'
+                games.append({
+                    'campeonato': championship,
+                    'jogo_formatado': jogo_formatado
+                })
+            except Exception as e:
+                print(f'Erro ao parsear jogo: {str(e)}')
+                continue
+
+    if not games:
+        print("Nenhum jogo encontrado. Verifique se o HTML mudou.")
+    else:
+        print(f"Total de {len(games)} jogos encontrados.")
+
+    games.sort(key=lambda x: (x['campeonato'], x['jogo_formatado']))
+    return games
+
+@app.route('/get-jogos/<date>')
+def get_jogos(date):
+    """Rota para retornar os jogos do dia especificado."""
+    try:
+        html = get_ge_data(date)
+        jogos = parse_games(html, date)
+        if not jogos:
+            return jsonify({'error': 'Nenhum jogo encontrado'}), 404
+        return jsonify(jogos)
+    except Exception as e:
+        print(f"Error in /get-jogos/{date}: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/gerar-pdf/<date>', methods=['POST'])
+def gerar_pdf(date):
+    """Rota para gerar um PDF dos jogos enviados pelo frontend."""
+    try:
+        print(f"Generating PDF for date: {date}")
+        data = request.get_json()
+        jogos = data.get('jogos', [])
+        
+        if not jogos:
+            return jsonify({'error': 'Nenhum jogo fornecido para gerar o PDF'}), 400
+
+        # Criar o PDF em memória com reportlab
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        styles = getSampleStyleSheet()
+        story = []
+
+        # Título
+        story.append(Paragraph(f"Agenda de Jogos - {date}", styles['Title']))
+        story.append(Spacer(1, 12))
+
+        # Adicionar campeonatos e jogos
+        for item in jogos:
+            campeonato = item['campeonato']
+            story.append(Paragraph(campeonato, styles['Heading2']))
+            for jogo in item['jogos']:
+                story.append(Paragraph(jogo, styles['BodyText']))
+            story.append(Spacer(1, 12))
+
+        doc.build(story)
+        pdf = buffer.getvalue()
+        buffer.close()
+
+        print("PDF generated successfully with reportlab")
+        return send_file(
+            io.BytesIO(pdf),
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'agenda_ge_{date}.pdf'
+        )
+    except Exception as e:
+        print(f"Error generating PDF for {date}: {str(e)}")
+        return jsonify({'error': f'Erro ao gerar PDF: {str(e)}'}), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(port=5000, debug=True)
