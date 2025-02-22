@@ -52,61 +52,65 @@ def get_ge_data(date):
 
 def parse_games(html, date):
     """Parseia o HTML e retorna uma lista de jogos de futebol formatados."""
-    dia, mes, ano = date.split('-')
-    data_formatada = f'{dia}/{mes}/{ano}'
+    try:
+        # Validação da data
+        if not date or len(date.split('-')) != 3:
+            raise ValueError("Formato de data inválido")
 
-    soup = BeautifulSoup(html, 'html.parser')
-    games = []
+        dia, mes, ano = date.split('-')
+        data_formatada = f'{dia}/{mes}/{ano}'
 
-    championship_groups = soup.find_all('div', class_='eventGrouperstyle__GroupByChampionshipsWrapper-sc-1bz1qr-0')
-    print(f"Found {len(championship_groups)} championship groups")
+        soup = BeautifulSoup(html, 'html.parser')
+        games = []
 
-    for group in championship_groups:
-        champ_name = group.find('span', class_='eventGrouperstyle__ChampionshipName-sc-1bz1qr-2')
-        if not champ_name:
-            continue
-        championship = champ_name.text.strip()
-        print(f"Processing championship: {championship}")
+        championship_groups = soup.find_all('div', class_='eventGrouperstyle__GroupByChampionshipsWrapper-sc-1bz1qr-0')
 
-        game_cards = group.find_all('a', class_='sc-eldPxv')
-        print(f"Found {len(game_cards)} games in {championship}")
-
-        for card in game_cards:
-            try:
-                spans = card.find_all('span', class_='sc-jXbUNg')
-                if len(spans) < 2:
-                    continue
-                time = None
-                for span in spans[::-1]:
-                    text = span.text.strip()
-                    if any(char.isdigit() for char in text) and ':' in text:
-                        time = text
-                        break
-                if not time:
-                    continue
-
-                teams = card.find_all('span', class_='sc-eeDRCY')
-                if len(teams) < 2:
-                    continue
-                home = teams[0].text.strip()
-                away = teams[1].text.strip()
-
-                jogo_formatado = f'{data_formatada} - {time} - {home} x {away}'
-                games.append({
-                    'campeonato': championship,
-                    'jogo_formatado': jogo_formatado
-                })
-            except Exception as e:
-                print(f'Erro ao parsear jogo: {str(e)}')
+        for group in championship_groups:
+            # Extração mais segura do nome do campeonato
+            champ_name = group.find('span', class_='eventGrouperstyle__ChampionshipName-sc-1bz1qr-2')
+            if not champ_name:
+                continue
+                
+            championship = champ_name.get_text(strip=True)
+            if not championship:
                 continue
 
-    if not games:
-        print("Nenhum jogo encontrado. Verifique se o HTML mudou.")
-    else:
-        print(f"Total de {len(games)} jogos encontrados.")
+            game_cards = group.find_all('a', class_='sc-eldPxv')
+            
+            for card in game_cards:
+                try:
+                    # Extração mais robusta do horário
+                    time_element = card.find('span', class_='sc-jXbUNg')
+                    if not time_element:
+                        continue
+                        
+                    time = time_element.get_text(strip=True)
+                    if not any(char.isdigit() for char in time):
+                        continue
 
-    games.sort(key=lambda x: (x['campeonato'], x['jogo_formatado']))
-    return games
+                    # Extração dos times
+                    teams = card.find_all('span', class_='sc-eeDRCY')
+                    if len(teams) < 2:
+                        continue
+                        
+                    home = teams[0].get_text(strip=True)
+                    away = teams[1].get_text(strip=True)
+
+                    games.append({
+                        'campeonato': championship,
+                        'jogo_formatado': f'{data_formatada} - {time} - {home} x {away}'
+                    })
+                    
+                except Exception as e:
+                    print(f'Erro ao parsear card: {str(e)}')
+                    continue
+
+        games.sort(key=lambda x: (x['campeonato'], x['jogo_formatado']))
+        return games
+
+    except Exception as e:
+        print(f'Erro no parse_games: {str(e)}')
+        raise
 
 @app.route('/get-jogos/<date>')
 def get_jogos(date):
