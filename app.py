@@ -63,52 +63,59 @@ def parse_games(html, date):
         soup = BeautifulSoup(html, 'html.parser')
         games = []
 
+        # Verifica se o HTML contém os elementos esperados
         championship_groups = soup.find_all('div', class_='eventGrouperstyle__GroupByChampionshipsWrapper-sc-1bz1qr-0')
-        print(f"Found {len(championship_groups)} championship groups")
+        if not championship_groups:
+            print("Nenhum grupo de campeonatos encontrado no HTML.")
+            return games
 
         for group in championship_groups:
+            # Extração mais segura do nome do campeonato
             champ_name = group.find('span', class_='eventGrouperstyle__ChampionshipName-sc-1bz1qr-2')
             if not champ_name:
+                print("Nome do campeonato não encontrado.")
                 continue
-            championship = champ_name.text.strip()
-            print(f"Processing championship: {championship}")
+                
+            championship = champ_name.get_text(strip=True)
+            if not championship:
+                print("Nome do campeonato vazio.")
+                continue
 
             game_cards = group.find_all('a', class_='sc-eldPxv')
-            print(f"Found {len(game_cards)} games in {championship}")
-
+            if not game_cards:
+                print(f"Nenhum jogo encontrado para o campeonato: {championship}")
+                continue
+            
             for card in game_cards:
                 try:
-                    spans = card.find_all('span', class_='sc-jXbUNg')
-                    if len(spans) < 2:
+                    # Extração mais robusta do horário
+                    time_element = card.find('span', class_='sc-jXbUNg')
+                    if not time_element:
+                        print("Horário não encontrado.")
                         continue
-                    time = None
-                    for span in spans[::-1]:
-                        text = span.text.strip()
-                        if any(char.isdigit() for char in text) and ':' in text:
-                            time = text
-                            break
-                    if not time:
+                        
+                    time = time_element.get_text(strip=True)
+                    if not any(char.isdigit() for char in time):
+                        print(f"Horário inválido: {time}")
                         continue
 
+                    # Extração dos times
                     teams = card.find_all('span', class_='sc-eeDRCY')
                     if len(teams) < 2:
+                        print("Times não encontrados.")
                         continue
-                    home = teams[0].text.strip()
-                    away = teams[1].text.strip()
+                        
+                    home = teams[0].get_text(strip=True)
+                    away = teams[1].get_text(strip=True)
 
-                    jogo_formatado = f'{data_formatada} - {time} - {home} x {away}'
                     games.append({
                         'campeonato': championship,
-                        'jogo_formatado': jogo_formatado
+                        'jogo_formatado': f'{data_formatada} - {time} - {home} x {away}'
                     })
+                    
                 except Exception as e:
-                    print(f'Erro ao parsear jogo: {str(e)}')
+                    print(f'Erro ao parsear card: {str(e)}')
                     continue
-
-        if not games:
-            print("Nenhum jogo encontrado. Verifique se o HTML mudou.")
-        else:
-            print(f"Total de {len(games)} jogos encontrados.")
 
         games.sort(key=lambda x: (x['campeonato'], x['jogo_formatado']))
         return games
