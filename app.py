@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, send_file, request
+from flask import Flask, jsonify, send_file, request, send_from_directory
 from flask_cors import CORS
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -8,6 +8,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import time
+import os
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
@@ -16,19 +17,28 @@ import io
 app = Flask(__name__)
 CORS(app)
 
+def setup_chrome():
+    options = webdriver.ChromeOptions()
+    options.add_argument('--headless')
+    options.add_argument('--disable-gpu')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--remote-debugging-port=9222')
+    options.add_argument('--single-process')
+    return options
+
 def get_ge_data(date):
-    """Obtém o HTML da página do GE para a data especificada."""
     try:
         print(f"Fetching HTML for date: {date}")
-        options = webdriver.ChromeOptions()
-        options.add_argument('--headless')
-        options.add_argument('--disable-gpu')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        driver = webdriver.Chrome(
+            service=Service(ChromeDriverManager().install()),
+            options=setup_chrome()
+        )
         url = f'https://ge.globo.com/agenda/#/futebol/{date}'
         driver.get(url)
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, 'eventGrouperstyle__GroupByChampionshipsWrapper-sc-1bz1qr-0')))
+        WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.CLASS_NAME, 'eventGrouperstyle__GroupByChampionshipsWrapper-sc-1bz1qr-0'))
+        )
         time.sleep(5)
         html = driver.page_source
         print("HTML fetched successfully")
@@ -39,7 +49,6 @@ def get_ge_data(date):
         raise Exception(f'Erro ao acessar GE.globo: {str(e)}')
 
 def parse_games(html, date):
-    """Parseia o HTML e retorna uma lista de jogos de futebol formatados."""
     dia, mes, ano = date.split('-')
     data_formatada = f'{dia}/{mes}/{ano}'
 
@@ -98,7 +107,6 @@ def parse_games(html, date):
 
 @app.route('/get-jogos/<date>')
 def get_jogos(date):
-    """Rota para retornar os jogos do dia especificado."""
     try:
         html = get_ge_data(date)
         jogos = parse_games(html, date)
@@ -111,7 +119,6 @@ def get_jogos(date):
 
 @app.route('/gerar-pdf/<date>', methods=['POST'])
 def gerar_pdf(date):
-    """Rota para gerar um PDF dos jogos enviados pelo frontend."""
     try:
         print(f"Generating PDF for date: {date}")
         data = request.get_json()
@@ -120,17 +127,14 @@ def gerar_pdf(date):
         if not jogos:
             return jsonify({'error': 'Nenhum jogo fornecido para gerar o PDF'}), 400
 
-        # Criar o PDF em memória com reportlab
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter)
         styles = getSampleStyleSheet()
         story = []
 
-        # Título
         story.append(Paragraph(f"Agenda de Jogos - {date}", styles['Title']))
         story.append(Spacer(1, 12))
 
-        # Adicionar campeonatos e jogos
         for item in jogos:
             campeonato = item['campeonato']
             story.append(Paragraph(campeonato, styles['Heading2']))
@@ -153,5 +157,14 @@ def gerar_pdf(date):
         print(f"Error generating PDF for {date}: {str(e)}")
         return jsonify({'error': f'Erro ao gerar PDF: {str(e)}'}), 500
 
+@app.route('/')
+def index():
+    return send_file('index.html')
+
+@app.route('/static/<path:path>')
+def send_static(path):
+    return send_from_directory('static', path)
+
 if __name__ == '__main__':
-    app.run(port=5000, debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
