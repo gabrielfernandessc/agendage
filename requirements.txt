@@ -1,3 +1,2 @@
-flask
-flask-cors
-gunicorn
+Flask==2.3.3
+pdfkit==1.0.0
