@@ -1,2 +1,7 @@
-Flask==2.3.3
-pdfkit==1.0.0
+flask==3.0.2
+flask-cors==4.0.0
+selenium==4.20.0
+beautifulsoup4==4.12.3
+reportlab==4.1.0
+webdriver-manager==4.0.1
+chromedriver-py==114.0.5735.90
