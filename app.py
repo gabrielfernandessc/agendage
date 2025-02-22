@@ -8,16 +8,17 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import time
-import os
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 import io
+import os
 
 app = Flask(__name__)
 CORS(app)
 
 def setup_chrome():
+    """Configura o ChromeDriver para rodar em modo headless."""
     options = webdriver.ChromeOptions()
     options.add_argument('--headless')
     options.add_argument('--disable-gpu')
@@ -28,6 +29,7 @@ def setup_chrome():
     return options
 
 def get_ge_data(date):
+    """Obtém o HTML da página do GE para a data especificada."""
     try:
         print(f"Fetching HTML for date: {date}")
         driver = webdriver.Chrome(
@@ -49,6 +51,7 @@ def get_ge_data(date):
         raise Exception(f'Erro ao acessar GE.globo: {str(e)}')
 
 def parse_games(html, date):
+    """Parseia o HTML e retorna uma lista de jogos de futebol formatados."""
     dia, mes, ano = date.split('-')
     data_formatada = f'{dia}/{mes}/{ano}'
 
@@ -107,6 +110,7 @@ def parse_games(html, date):
 
 @app.route('/get-jogos/<date>')
 def get_jogos(date):
+    """Rota para retornar os jogos do dia especificado."""
     try:
         html = get_ge_data(date)
         jogos = parse_games(html, date)
@@ -119,6 +123,7 @@ def get_jogos(date):
 
 @app.route('/gerar-pdf/<date>', methods=['POST'])
 def gerar_pdf(date):
+    """Rota para gerar um PDF dos jogos enviados pelo frontend."""
     try:
         print(f"Generating PDF for date: {date}")
         data = request.get_json()
@@ -159,10 +164,12 @@ def gerar_pdf(date):
 
 @app.route('/')
 def index():
+    """Rota principal para servir o arquivo index.html."""
     return send_file('index.html')
 
 @app.route('/static/<path:path>')
 def send_static(path):
+    """Rota para servir arquivos estáticos."""
     return send_from_directory('static', path)
 
 if __name__ == '__main__':
